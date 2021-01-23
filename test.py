@@ -8,7 +8,7 @@ print("running...")
 intp.run("""
 print("hello world!", 1)
 print(abs(-11 + 2))
-a = 1
 
+a = 1
+abs(a+2+f= 2)
 """)
-intp._debug_dump()

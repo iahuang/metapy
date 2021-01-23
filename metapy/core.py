@@ -44,7 +44,20 @@ class MPString(MPPrimitive):
 class MPNone(MPPrimitive):
     def __init__(self):
         super().__init__(None)
-        
+
+class MPList(MPObject):
+    def __init__(self, data=[]):
+        super().__init__()
+        self.data = data
+
+        self.set_member("append", create_native_function(self._append))
+        self.set_member("__len__", create_native_function(self._len))
+
+    def _append(self, obj):
+        self.data.append(obj)
+    
+    def _len(self):
+        return convert_pyobj(len(self.data))
 
 class MPFunction(MPObject):
     def __init__(self, body):
@@ -61,9 +74,18 @@ class MPNativeFunction:
     In most regards, MPNativeFunction behaves like a MPObject class,
     but is not technically an MPObject.
     """
-    def __init__(self, lmb):
-        self.lmb = lmb
+    def __init__(self, func):
+        self._func = func
         self.members = {}
+    
+    def invoke(self, *args, **kwargs):
+        retval = self._func(*args, **kwargs)
+
+        # implicitly return None
+        if retval is None:
+            return MPNone()
+        
+        return retval
 
 def _unsupported(*args, **kwargs):
     raise Exception("Unsupported function")
@@ -75,8 +97,8 @@ class MPUnsupportedFunction(MPNativeFunction):
 def create_implemented_function(source):
     return MPFunction(body=parse_body(source))
 
-def create_native_function(lmb):
-    return MPNativeFunction(lmb)
+def create_native_function(func):
+    return MPNativeFunction(func)
 
 def convert_pyobj(obj):
     """ Converts a Python object into a MPObject instance """
@@ -95,6 +117,8 @@ def convert_mpobj(obj):
 
     if isinstance(obj, MPPrimitive):
         return obj.native_value
+    elif isinstance(obj, MPNativeFunction):
+        return obj._func
     else:
         raise Exception("Unsupported object type")
 

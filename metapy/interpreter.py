@@ -14,13 +14,14 @@ class Stackframe:
         return self._locals.get(name, None)
 
 class Interpreter:
+    """ Main interpreter class for MetaPy """
     def __init__(self):
         self.globals = {}
         self.stack = []
     
         self.current_stackframe = None
 
-        # temporary
+        # this is just here to make "if __name__ == "__main__" " work properly
         self.set_global("__name__", core.convert_pyobj("__main__"))
     
     def _debug_dump(self):
@@ -44,15 +45,18 @@ class Interpreter:
         tbl.print()
     
     def set_global(self, name, value):
+        """ Register name to a MPObject instance in the global scope """
         self.globals[name] = value
 
     def set_in_current_scope(self, name, value):
+        """ Register name to a MPObject instance in the current scope """
         if self.current_stackframe:
             self.current_stackframe.set_var(name, value)
         else:
             self.set_global(name, value)
     
     def resolve_name(self, name):
+        """ Find out what a variable name refers to in the current execution context """
         if self.current_stackframe:
             if val := self.current_stackframe.resolve_name(name):
                 return val 
@@ -63,7 +67,7 @@ class Interpreter:
         """ Attempt to call a given MPObject or MPNativeFunction """
 
         if isinstance(value, core.MPNativeFunction):
-            ret = value.lmb(*args, **kwargs)
+            ret = value.invoke(*args, **kwargs)
             return ret
         elif isinstance(value, core.MPObject):
             call_method = value.get_member("__call__")
@@ -73,6 +77,7 @@ class Interpreter:
         raise Exception("todo: implement")
 
     def multi_eval(self, nodes):
+        """ Evaluate multiple ast.Nodes at once """
         return [self.eval_expression(node) for node in nodes]
     
     def eval_expression(self, node):
@@ -117,8 +122,10 @@ class Interpreter:
             return self.invoke_call(call_target, call_args)
         
         if isinstance(node, ast.Name):
-            return self.resolve_name(node.id)
-        
+            val = self.resolve_name(node.id)
+            if not val:
+                self.raise_error("Undefined symbol \"{}\"".format(node.id), node)
+            return val
         self.raise_error("Unsupported node type \"{}\"".format(type(node).__name__), node)
 
 
@@ -152,6 +159,7 @@ class Interpreter:
             self.raise_error("Unsupported syntax node type \"{}\"".format(type(node).__name__), node)
         
     def run(self, source, debug=True):
+        """ Run a complete Python module """
         for node in ast.parse(source).body:
             print(core.dump(node))
             self.execute_node(node) 
