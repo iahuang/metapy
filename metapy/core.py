@@ -1,10 +1,15 @@
 import ast
+from os import stat
 
 class MPObject:
     def __init__(self):
         self.members = {
-            "__str__": create_native_function(lambda _self: str(_self))
+            "__str__": create_native_function(MPObject._str)
         }
+    
+    @staticmethod
+    def _str(_self):
+        return MPString(str(_self))
         
     def set_member(self, name, value):
         self.members[name] = value
@@ -12,30 +17,43 @@ class MPObject:
     def get_member(self, name):
         """ Retrieve value of a class member, None if it doesn't exist """
         return self.members.get(name, None)
+    
+    def call_method(self, name, args=[], kwargs={}):
+        method = self.get_member(name)
+        return method.invoke(*([self]+args), **kwargs)
+
 
 class MPPrimitive(MPObject):
     def __init__(self, val):
         super().__init__()
         self.native_value = val
 
-        self.set_member("__str__", create_native_function(lambda _self: str(_self.native_value)))
-        
+        self.set_member("__str__", create_native_function(MPPrimitive._str))
+    
+    @staticmethod
+    def _str(_self):
+        return MPString(_self.native_value)
+
 class MPInteger(MPPrimitive):
     def __init__(self, val):
         super().__init__(val)
-        self.set_member("__add__", create_native_function(self._add))
-        self.set_member("__sub__", create_native_function(self._sub))
-        self.set_member("__mul__", create_native_function(self._mul))
-        self.set_member("__div__", create_native_function(self._div))
+        self.set_member("__add__", create_native_function(MPInteger._add))
+        self.set_member("__sub__", create_native_function(MPInteger._sub))
+        self.set_member("__mul__", create_native_function(MPInteger._mul))
+        self.set_member("__div__", create_native_function(MPInteger._div))
     
-    def _add(self, x):
-        return convert_pyobj(self.native_value + x.native_value)
-    def _sub(self, x):
-        return convert_pyobj(self.native_value - x.native_value)
-    def _mul(self, x):
-        return convert_pyobj(self.native_value * x.native_value)
-    def _div(self, x):
-        return convert_pyobj(self.native_value / x.native_value)
+    @staticmethod
+    def _add(_self, x):
+        return convert_pyobj(_self.native_value + x.native_value)
+    @staticmethod
+    def _sub(_self, x):
+        return convert_pyobj(_self.native_value - x.native_value)
+    @staticmethod
+    def _mul(_self, x):
+        return convert_pyobj(_self.native_value * x.native_value)
+    @staticmethod
+    def _div(_self, x):
+        return convert_pyobj(_self.native_value / x.native_value)
 
 class MPString(MPPrimitive):
     def __init__(self, val):
@@ -51,13 +69,23 @@ class MPList(MPObject):
         self.data = data
 
         self.set_member("append", create_native_function(self._append))
+        self.set_member("copy", create_native_function(self._copy))
         self.set_member("__len__", create_native_function(self._len))
+        self.set_member("__str__", create_native_function(MPList._str))
+
+    @staticmethod
+    def _str(_self):
+        s = str([el.call_method("__str__").native_value for el in _self.data])
+        return MPString(s)
 
     def _append(self, obj):
         self.data.append(obj)
     
     def _len(self):
         return convert_pyobj(len(self.data))
+    
+    def _copy(self):
+        return convert_pyobj(self.data[:])
 
 class MPFunction(MPObject):
     def __init__(self, body):
@@ -109,6 +137,8 @@ def convert_pyobj(obj):
         return MPString(obj)
     elif obj is None:
         return MPNone()
+    elif isinstance(obj, list):
+        return MPList(data=[convert_pyobj(item) for item in obj])
     else:
         raise Exception("Unsupported object type", type(obj))
 

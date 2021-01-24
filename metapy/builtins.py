@@ -20,6 +20,9 @@ def _load_native(interpreter: Interpreter, f):
 def _unsuppported():
     return core.cre
 
+def mp_print(*objs, **kwargs):
+    print(*[obj.call_method("__str__").native_value for obj in objs], **kwargs)
+
 def load_to_interpreter(interpreter: Interpreter):
     py_wrap_direct = [
         abs,
@@ -87,3 +90,5 @@ def load_to_interpreter(interpreter: Interpreter):
     
     for f in py_unsupported:
         interpreter.set_global(f.__name__, core.MPUnsupportedFunction())
+    
+    interpreter.set_global("print", core.create_native_function(mp_print))

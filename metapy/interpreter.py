@@ -103,15 +103,13 @@ class Interpreter:
             
             left = self.eval_expression(node.left)
             right = self.eval_expression(node.right)
-            method = left.get_member(op_method_name)
-
-            return self.invoke_call(method, [right])
+            return left.call_method(op_method_name, [right])
 
         if isinstance(node, ast.UnaryOp):
             if isinstance(node.op, ast.USub):
-                sub_func = core.MPInteger(0).get_member("__sub__")
+                zero = core.MPInteger(0)
                 operand = self.eval_expression(node.operand)
-                return self.invoke_call(sub_func, [operand])
+                return zero.call_method("__sub__", [operand])
 
             self.raise_error("Unsupported node type \"{}\"".format(type(node.op).__name__), node)
 
@@ -126,7 +124,12 @@ class Interpreter:
             if not val:
                 self.raise_error("Undefined symbol \"{}\"".format(node.id), node)
             return val
-        self.raise_error("Unsupported node type \"{}\"".format(type(node).__name__), node)
+
+        if isinstance(node, ast.List):
+            elts = [self.eval_expression(el) for el in node.elts]
+            
+            return core.MPList(elts)
+        self.raise_error("Unsupported syntax node type \"{}\"".format(type(node).__name__), node)
 
 
     def raise_error(self, message, offending_node=None):
@@ -158,8 +161,8 @@ class Interpreter:
         else:
             self.raise_error("Unsupported syntax node type \"{}\"".format(type(node).__name__), node)
         
-    def run(self, source, debug=True):
+    def run(self, source, debug=False):
         """ Run a complete Python module """
         for node in ast.parse(source).body:
-            print(core.dump(node))
+            if debug:print(core.dump(node))
             self.execute_node(node) 
