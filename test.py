@@ -8,7 +8,14 @@ print("hello world!", 1)
 print(abs(-11 + 2))
 
 a = [1, 2, 3, "yes", "no"]
-print(a)
+
+def n():
+    a = 1
+    print(a)
+    fads
+    print("deon sucks")
+
+n()
 """)
 
-intp._debug_dump()
+#intp._debug_dump()

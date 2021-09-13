@@ -1,11 +1,13 @@
 import ast
+from typing import List
 from . import core, _util
 
 class MPRuntimeError(Exception): pass
 
 class Stackframe:
-    def __init__(self):
+    def __init__(self, function_name):
         self._locals = {}
+        self.function_name = function_name
     
     def set_var(self, name, value):
         self._locals[name] = value
@@ -17,9 +19,7 @@ class Interpreter:
     """ Main interpreter class for MetaPy """
     def __init__(self):
         self.globals = {}
-        self.stack = []
-    
-        self.current_stackframe = None
+        self.stack: List[Stackframe] = []
 
         # this is just here to make "if __name__ == "__main__" " work properly
         self.set_global("__name__", core.convert_pyobj("__main__"))
@@ -44,6 +44,12 @@ class Interpreter:
         tbl.cell_pad = 2
         tbl.print()
     
+    @property
+    def current_stackframe(self):
+        if self.stack:
+            return self.stack[-1]
+        return None
+
     def set_global(self, name, value):
         """ Register name to a MPObject instance in the global scope """
         self.globals[name] = value
@@ -69,12 +75,18 @@ class Interpreter:
         if isinstance(value, core.MPNativeFunction):
             ret = value.invoke(*args, **kwargs)
             return ret
+        elif isinstance(value, core.MPFunction):
+            self.stack.append(Stackframe(value.name))
+            for node in value.body:
+                self.execute_node(node)
+            self.stack.pop()
+            
         elif isinstance(value, core.MPObject):
             call_method = value.get_member("__call__")
             if call_method is None: self.raise_error("Object is not callable")
             self.invoke_call(call_method, args, kwargs)
-
-        raise Exception("todo: implement")
+        else:
+            raise Exception("todo: implement")
 
     def multi_eval(self, nodes):
         """ Evaluate multiple ast.Nodes at once """
@@ -140,7 +152,7 @@ class Interpreter:
                 offending_node.col_offset,
                 message
             )
-            raise MPRuntimeError(msg) 
+            raise MPRuntimeError(msg)
         raise MPRuntimeError(message)
 
     def execute_node(self, node):
@@ -154,15 +166,31 @@ class Interpreter:
                     self.raise_error("Invalid lefthand operand to assignment", target)
                 
                 target_name = target.id
-
                 self.set_in_current_scope(target_name, self.eval_expression(node.value))
         elif isinstance(node, ast.Expr):
             self.eval_expression(node)
+        elif isinstance(node, ast.FunctionDef):
+            function_name = node.name
+            args = node.args
+            body = node.body
+
+            function_object = core.MPFunction(name=function_name, body=body)
+
+            self.set_in_current_scope(function_name, function_object)
         else:
             self.raise_error("Unsupported syntax node type \"{}\"".format(type(node).__name__), node)
         
     def run(self, source, debug=False):
         """ Run a complete Python module """
-        for node in ast.parse(source).body:
-            if debug:print(core.dump(node))
-            self.execute_node(node) 
+
+        try:
+            for node in ast.parse(source).body:
+                if debug:print(core.dump(node))
+                self.execute_node(node) 
+        except MPRuntimeError as err:
+            print("Traceback (most recent call last):")
+            print("  in <module>:")
+            for frame in self.stack:
+                print("  in function " + frame.function_name+":")
+            print(err)
+            

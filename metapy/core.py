@@ -88,8 +88,9 @@ class MPList(MPObject):
         return convert_pyobj(self.data[:])
 
 class MPFunction(MPObject):
-    def __init__(self, body):
+    def __init__(self, name, body):
         super().__init__()
+        self.name = name
         self.body = body
 
 class MPNativeFunction:
@@ -114,6 +115,10 @@ class MPNativeFunction:
             return MPNone()
         
         return retval
+    
+    def call_method(self, name, args=[], kwargs={}):
+        if name == "__str__":
+            return convert_pyobj("<UnsupportedFunction>")
 
 def _unsupported(*args, **kwargs):
     raise Exception("Unsupported function")
@@ -122,8 +127,8 @@ class MPUnsupportedFunction(MPNativeFunction):
     def __init__(self):
         super().__init__(_unsupported)
 
-def create_implemented_function(source):
-    return MPFunction(body=parse_body(source))
+# def create_implemented_function(source):
+#     return MPFunction(name="", body=parse_body(source))
 
 def create_native_function(func):
     return MPNativeFunction(func)
