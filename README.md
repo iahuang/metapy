@@ -31,4 +31,10 @@ except interpreter.MPRuntimeError as e:
 ```
 ## Limitations
 
+### Built-in functions
+
 Not all built-in functions are supported at the moment. For some functions such as `open()`, this is an intentional security feature. To see a list of currently supported built-ins, use `metapy.Interpreter()._dump_debug()`
+
+### Typing
+
+MetaPy's internal typing system functions differently than in CPython, code that relies heavily on meta type-checking may work diferently.

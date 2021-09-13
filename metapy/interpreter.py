@@ -1,8 +1,8 @@
+from __future__ import print_function
 import ast
 from typing import List
-from . import core, _util
-
-class MPRuntimeError(Exception): pass
+from . import core, _util, mperr
+import sys
 
 class Stackframe:
     def __init__(self, function_name):
@@ -20,6 +20,7 @@ class Interpreter:
     def __init__(self):
         self.globals = {}
         self.stack: List[Stackframe] = []
+        self.current_node = None
 
         # this is just here to make "if __name__ == "__main__" " work properly
         self.set_global("__name__", core.convert_pyobj("__main__"))
@@ -78,6 +79,7 @@ class Interpreter:
         elif isinstance(value, core.MPFunction):
             self.stack.append(Stackframe(value.name))
             for node in value.body:
+                self.current_node = node
                 self.execute_node(node)
             self.stack.pop()
             
@@ -94,6 +96,8 @@ class Interpreter:
     
     def eval_expression(self, node):
         """ Given an ast.Node object, return an MPObject instance """
+
+        self.current_node = node
 
         if isinstance(node, ast.Expr):
             return self.eval_expression(node.value)
@@ -123,7 +127,7 @@ class Interpreter:
                 operand = self.eval_expression(node.operand)
                 return zero.call_method("__sub__", [operand])
 
-            self.raise_error("Unsupported node type \"{}\"".format(type(node.op).__name__), node)
+            self.raise_error("Unsupported node type \"{}\"".format(type(node.op).__name__))
 
         if isinstance(node, ast.Call):
             call_target = self.eval_expression(node.func)
@@ -134,29 +138,26 @@ class Interpreter:
         if isinstance(node, ast.Name):
             val = self.resolve_name(node.id)
             if not val:
-                self.raise_error("Undefined symbol \"{}\"".format(node.id), node)
+                self.raise_error("Undefined symbol \"{}\"".format(node.id))
             return val
 
         if isinstance(node, ast.List):
             elts = [self.eval_expression(el) for el in node.elts]
             
             return core.MPList(elts)
-        self.raise_error("Unsupported syntax node type \"{}\"".format(type(node).__name__), node)
+        self.raise_error("Unsupported syntax node type \"{}\"".format(type(node).__name__))
 
 
-    def raise_error(self, message, offending_node=None):
+    def raise_error(self, message):
         """ Create an MPRuntimeError, optionally citing a specific ast.Node """
-        if offending_node:
-            msg = "at {}:{} - {}".format(
-                offending_node.lineno,
-                offending_node.col_offset,
-                message
-            )
-            raise MPRuntimeError(msg)
-        raise MPRuntimeError(message)
+        offending_node = self.current_node
+
+        raise mperr.MPRuntimeError(msg=message, node=offending_node)
 
     def execute_node(self, node):
         """ Evaluate and run the contents of the given ast.Node. Doesn't return anything """
+        
+        self.current_node = node
 
         if isinstance(node, ast.Assign):
             targets = node.targets
@@ -177,20 +178,42 @@ class Interpreter:
             function_object = core.MPFunction(name=function_name, body=body)
 
             self.set_in_current_scope(function_name, function_object)
+        elif isinstance(node, ast.For):
+            iter_over = self.eval_expression(node.iter)
+
+            if hasattr(iter_over, "_arr_data"):
+                data = iter_over._arr_data
+
+                for _i in data:
+                    self.set_in_current_scope(node.target.id, _i)
+                    for body_node in node.body:
+                        self.execute_node(body_node)
+            else:
+                self.raise_error("Cannot iterate over object of type "+str(type(iter_over).__name__))
         else:
             self.raise_error("Unsupported syntax node type \"{}\"".format(type(node).__name__), node)
-        
+    
+    def print_err_stacktrace(self, err: mperr.MPRuntimeError):
+        print("Traceback (most recent call last):", file=sys.stderr)
+        print("  in <module>:", file=sys.stderr)
+        for frame in self.stack:
+            print("  in function " + frame.function_name+":", file=sys.stderr)
+
+        where = "at {}:{} - ".format(
+            err.node.lineno,
+            err.node.col_offset,
+        )
+        print(where + err.msg, file=sys.stderr)
+
     def run(self, source, debug=False):
         """ Run a complete Python module """
-
+        
         try:
             for node in ast.parse(source).body:
-                if debug:print(core.dump(node))
+                self.current_node = node
+                if debug: print(core.dump(node))
                 self.execute_node(node) 
-        except MPRuntimeError as err:
-            print("Traceback (most recent call last):")
-            print("  in <module>:")
-            for frame in self.stack:
-                print("  in function " + frame.function_name+":")
-            print(err)
-            
+        except mperr.MPRuntimeError as err:
+            self.print_err_stacktrace(err)
+        except mperr.MPInternalError as err:
+            self.print_err_stacktrace(mperr.MPRuntimeError(str(err), self.current_node))

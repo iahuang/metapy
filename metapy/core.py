@@ -1,5 +1,6 @@
 import ast
-from os import stat
+from typing import Type
+from . import mperr
 
 class MPObject:
     def __init__(self):
@@ -15,8 +16,12 @@ class MPObject:
         self.members[name] = value
     
     def get_member(self, name):
-        """ Retrieve value of a class member, None if it doesn't exist """
-        return self.members.get(name, None)
+        """ Retrieve value of a class member """
+        
+        if not name in self.members:
+            raise mperr.MPInternalError(f'Object has no attribute or method "{name}"')
+        
+        return self.members[name]
     
     def call_method(self, name, args=[], kwargs={}):
         method = self.get_member(name)
@@ -66,26 +71,32 @@ class MPNone(MPPrimitive):
 class MPList(MPObject):
     def __init__(self, data=[]):
         super().__init__()
-        self.data = data
+        self._arr_data = data
 
         self.set_member("append", create_native_function(self._append))
         self.set_member("copy", create_native_function(self._copy))
         self.set_member("__len__", create_native_function(self._len))
         self.set_member("__str__", create_native_function(MPList._str))
+        self.set_member("__add__", create_native_function(self._add))
 
     @staticmethod
     def _str(_self):
-        s = str([el.call_method("__str__").native_value for el in _self.data])
+        s = str([el.call_method("__str__").native_value for el in _self._arr_data])
         return MPString(s)
+    
+    def _add(self, a, b):
+        _assert_type(a, MPList)
+        _assert_type(b, MPList)
+        return MPList(a._arr_data+b._arr_data)
 
     def _append(self, obj):
-        self.data.append(obj)
+        self._arr_data.append(obj)
     
     def _len(self):
-        return convert_pyobj(len(self.data))
+        return convert_pyobj(len(self._arr_data))
     
     def _copy(self):
-        return convert_pyobj(self.data[:])
+        return convert_pyobj(self._arr_data[:])
 
 class MPFunction(MPObject):
     def __init__(self, name, body):
@@ -121,7 +132,7 @@ class MPNativeFunction:
             return convert_pyobj("<UnsupportedFunction>")
 
 def _unsupported(*args, **kwargs):
-    raise Exception("Unsupported function")
+    raise mperr.MPInternalError("Unsupported function call")
 
 class MPUnsupportedFunction(MPNativeFunction):
     def __init__(self):
@@ -129,6 +140,8 @@ class MPUnsupportedFunction(MPNativeFunction):
 
 # def create_implemented_function(source):
 #     return MPFunction(name="", body=parse_body(source))
+
+""" Conversion + creation functions """
 
 def create_native_function(func):
     return MPNativeFunction(func)
@@ -145,7 +158,7 @@ def convert_pyobj(obj):
     elif isinstance(obj, list):
         return MPList(data=[convert_pyobj(item) for item in obj])
     else:
-        raise Exception("Unsupported object type", type(obj))
+        raise mperr.MPInternalError("Unsupported object type", type(obj))
 
 def convert_mpobj(obj):
     """ Converts an MetaPy object into a native Python object """
@@ -155,7 +168,7 @@ def convert_mpobj(obj):
     elif isinstance(obj, MPNativeFunction):
         return obj._func
     else:
-        raise Exception("Unsupported object type")
+        raise mperr.MPInternalError("Unsupported object type")
 
 # internally code bodies are represented using native AST objects
 def parse_body(source):
@@ -171,3 +184,16 @@ def dump_body(body):
         output+="    "+d+",\n"
     output+="]"
     return output
+
+""" Assertion functions """
+
+def _assert_type(obj: MPObject, type: Type):
+    if not isinstance(obj, type):
+        raise mperr.MPInternalError(f'Expected type {type}, found object of type {_typeof(obj)}')
+
+def _typeof(obj: MPObject):
+    return type(obj).__name__
+
+def _assert_iterable(obj: MPObject):
+    if not hasattr(obj, "_arr_data"):
+        raise mperr.MPInternalError(f'Object of type {_typeof(obj)} is not iterable!')

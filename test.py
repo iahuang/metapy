@@ -9,13 +9,13 @@ print(abs(-11 + 2))
 
 a = [1, 2, 3, "yes", "no"]
 
-def n():
-    a = 1
-    print(a)
-    fads
-    print("deon sucks")
+def ffn():
+    for a in [1, 2, 3, 4] + [1, 2] + a:
+        print(a)
 
-n()
+ffn()
+print(type)
 """)
+
 
 #intp._debug_dump()
